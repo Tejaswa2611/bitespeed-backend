@@ -6,7 +6,25 @@ interface ContactPayload {
     phoneNumber?: string;
 }
 
-export const reconcileContact = async ({ email, phoneNumber }: ContactPayload) => {
+function dedupe(arr: (string | undefined)[]): string[] {
+    return [...new Set(arr.filter(Boolean) as string[])];
+}
+
+function formatResponse(primaryId: number) {
+    return {
+        contact: {
+            primaryContatctId: primaryId,
+            emails: [],
+            phoneNumbers: [],
+            secondaryContactIds: []
+        }
+    };
+}
+
+export const reconcileContact = async ({
+    email,
+    phoneNumber
+}: ContactPayload) => {
     const matches = await Contact.findAll({
         where: {
             deletedAt: null,
@@ -28,15 +46,14 @@ export const reconcileContact = async ({ email, phoneNumber }: ContactPayload) =
     }
 
     const primaryIdSet = new Set<number>();
-    matches.forEach(contact => {
-        if (contact.linkPrecedence === 'primary') {
-            primaryIdSet.add(contact.id);
-        } else if (contact.linkPrecedence === 'secondary' && contact.linkedId) {
-            primaryIdSet.add(contact.linkedId);
+    for (const c of matches) {
+        if (c.linkPrecedence === 'primary') {
+            primaryIdSet.add(c.id);
+        } else if (c.linkPrecedence === 'secondary' && c.linkedId) {
+            primaryIdSet.add(c.linkedId);
         }
-    });
+    }
     const primaryIds = Array.from(primaryIdSet);
-
     let finalPrimaryId: number;
 
     if (primaryIds.length > 1) {
@@ -44,8 +61,7 @@ export const reconcileContact = async ({ email, phoneNumber }: ContactPayload) =
             where: { id: primaryIds },
             order: [['createdAt', 'ASC']]
         });
-        const root = primaries[0];
-        finalPrimaryId = root.id;
+        finalPrimaryId = primaries[0].id;
 
         for (const old of primaries.slice(1)) {
             await Contact.update(
@@ -61,31 +77,25 @@ export const reconcileContact = async ({ email, phoneNumber }: ContactPayload) =
                 }
             );
         }
+
     } else {
         finalPrimaryId = primaryIds[0];
 
-        const cluster = await Contact.findAll({
-            where: {
-                deletedAt: null,
-                [Op.or]: [
-                    { id: finalPrimaryId },
-                    { linkedId: finalPrimaryId }
-                ]
-            }
-        });
-
-        const exactExists = cluster.some(
+        const hasEmailMatch = email ? matches.some(c => c.email === email) : false;
+        const hasPhoneMatch = phoneNumber ? matches.some(c => c.phoneNumber === phoneNumber) : false;
+        const exactExists = matches.some(
             c => c.email === email && c.phoneNumber === phoneNumber
         );
 
-        if (!exactExists && matches.length === 1) {
-            const newSecondary = await Contact.create({
+        // create a new secondary only if there is no exact match AND exactly one of email or phone matches
+        // this avoids creating a secondary contact when both email and phone match an existing primary
+        if (!exactExists && (hasEmailMatch !== hasPhoneMatch)) {
+            await Contact.create({
                 email,
                 phoneNumber,
                 linkPrecedence: 'secondary',
                 linkedId: finalPrimaryId
             });
-            cluster.push(newSecondary);
         }
     }
 
@@ -115,18 +125,3 @@ export const reconcileContact = async ({ email, phoneNumber }: ContactPayload) =
         }
     };
 };
-
-function dedupe(arr: (string | undefined)[]) {
-    return [...new Set(arr.filter(Boolean) as string[])];
-}
-
-function formatResponse(primaryId: number) {
-    return {
-        contact: {
-            primaryContatctId: primaryId,
-            emails: [],
-            phoneNumbers: [],
-            secondaryContactIds: []
-        }
-    };
-}
