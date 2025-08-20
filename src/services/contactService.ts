@@ -10,17 +10,6 @@ function dedupe(arr: (string | undefined)[]): string[] {
     return [...new Set(arr.filter(Boolean) as string[])];
 }
 
-function formatResponse(primaryId: number) {
-    return {
-        contact: {
-            primaryContatctId: primaryId,
-            emails: [],
-            phoneNumbers: [],
-            secondaryContactIds: []
-        }
-    };
-}
-
 export const reconcileContact = async ({
     email,
     phoneNumber
@@ -42,7 +31,14 @@ export const reconcileContact = async ({
             phoneNumber,
             linkPrecedence: 'primary'
         });
-        return formatResponse(newPrimary.id);
+        return {
+            contact: {
+                primaryContactId: newPrimary.id,
+                emails: email ? [email] : [],
+                phoneNumbers: phoneNumber ? [phoneNumber] : [],
+                secondaryContactIds: []
+            }
+        };
     }
 
     const primaryIdSet = new Set<number>();
@@ -118,7 +114,7 @@ export const reconcileContact = async ({
 
     return {
         contact: {
-            primaryContatctId: finalPrimaryId,
+            primaryContactId: finalPrimaryId,
             emails,
             phoneNumbers,
             secondaryContactIds

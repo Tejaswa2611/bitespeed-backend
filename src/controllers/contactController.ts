@@ -7,6 +7,7 @@ export const identifyContact: RequestHandler = async (req: Request, res: Respons
 
         if (!email && !phoneNumber) {
             res.status(400).json({ error: 'Email or phoneNumber must be provided.' });
+            return;
         }
 
         const result = await reconcileContact({ email, phoneNumber });
